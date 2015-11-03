@@ -15,12 +15,15 @@ import org.openide.util.Exceptions;
 import org.openide.util.Lookup;
 
 import de.foopara.phpcsmd.debug.Logger;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.nio.charset.Charset;
 
 /**
  *
  * @author nspecht
  */
-public class GenericProcess
+public class GenericProcess 
 {
 
     public static GenericOutputReader run(ExternalProcessBuilder builder) {
@@ -57,29 +60,22 @@ public class GenericProcess
     }
 
     public static GenericOutputReader[] run(String cmd, File[] outputFiles, GenericTopComponent topComponent, Lookup lkp) {
-        if (outputFiles.length == 0) {
-            outputFiles = null;
-        }
-
         FileInputStream fis = null;
         try {
             Process child = Runtime.getRuntime().exec(cmd);
-            StringBuilder tmp = new StringBuilder();
             InputStream in = child.getInputStream();
-            int c;
-            if (outputFiles == null) {
-                while ((c = in.read()) != -1) {
-                    tmp.append((char)c);
-                }
+
+            if (outputFiles.length == 0) {
+                final StringBuilder tmp = new StringBuilder();
+                tmp.append(getXmlStringFromInputStream(in, Charset.forName("UTF-8")));
                 return new GenericOutputReader[]{new GenericOutputReader(tmp)};
             } else {
                 InputStream err = child.getErrorStream();
 
-                while ((c = in.read()) != -1) {
-                    if (topComponent != null) {
-                        tmp.append((char)c);
-                        topComponent.setCommandOutput(tmp.toString());
-                    }
+                if (topComponent != null) {
+                    final StringBuilder tmp = new StringBuilder();
+                    tmp.append(getXmlStringFromInputStream(in, Charset.forName("UTF-8")));
+                    topComponent.setCommandOutput(tmp.toString());
                 }
                 while ((err.read()) != -1) {
                 } //Ich muss das auslesen, damit der Prozess wartet
@@ -87,14 +83,12 @@ public class GenericProcess
                 child.waitFor();
                 child.exitValue();
 
-                HashSet<GenericOutputReader> reader = new HashSet<GenericOutputReader>();
-                for (File outputFile : outputFiles) {
+                final HashSet<GenericOutputReader> reader = new HashSet<GenericOutputReader>();
+                for (final File outputFile : outputFiles) {
                     if (GenericHelper.isDesirableFile(outputFile, lkp, false)) {
-                        tmp = new StringBuilder();
+                        final StringBuilder tmp = new StringBuilder();
                         fis = new FileInputStream(outputFile);
-                        while ((c = fis.read()) != -1) {
-                            tmp.append((char)c);
-                        }
+                        tmp.append(getXmlStringFromInputStream(fis, Charset.forName("UTF-8")));
                         reader.add(new GenericOutputReader(tmp));
                         fis.close();
                     }
@@ -103,7 +97,7 @@ public class GenericProcess
                 Object[] tmpReader = reader.toArray();
                 GenericOutputReader[] res = new GenericOutputReader[tmpReader.length];
                 for (int i = 0; i < tmpReader.length; i++) {
-                    res[i] = (GenericOutputReader)tmpReader[i];
+                    res[i] = (GenericOutputReader) tmpReader[i];
                 }
 
                 return res;
@@ -124,6 +118,40 @@ public class GenericProcess
             }
         }
         return new GenericOutputReader[]{};
+    }
+
+    private static String getXmlStringFromInputStream(InputStream is, Charset cs)
+            throws IOException {
+
+        BufferedReader br = null;
+        StringBuilder sb = new StringBuilder();
+
+        String line;
+        try {
+
+            InputStreamReader isr = new InputStreamReader(is, cs);
+            boolean xmlstart = false;
+            br = new BufferedReader(isr);
+            while ((line = br.readLine()) != null) {
+                if (xmlstart) {
+                    sb.append(line);
+                } else if (line.trim().startsWith("<")) {
+                    xmlstart = true;
+                }
+            }
+
+        } finally {
+            if (br != null) {
+                try {
+                    br.close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+
+        return sb.toString();
+
     }
 
 }
